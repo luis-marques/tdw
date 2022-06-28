@@ -4,7 +4,6 @@ from json import dumps
 from pathlib import Path
 import xml.etree.ElementTree
 from platform import system
-from subprocess import call
 from tdw.add_ons.add_on import AddOn
 from tdw.asset_bundle_creator import AssetBundleCreator
 from tdw.tdw_utils import TDWUtils
@@ -29,7 +28,7 @@ class LISDF(AddOn):
         Read an .lisdf file and send commands to the build to add the objects to the scene.
         If corresponding asset bundles don't exist in `asset_bundles_directory` or if `overwrite == True`, this function will call the `asset_bundle_creator` Unity project and generate new asset bundles.
 
-        The resulting list of commands will be saved to `asset_bundles_directory/commands.json`. Optionally, they will also be sent to the build the next time `c.communicate()` is called.
+        The resulting list of commands will be saved to `[ASSET_BUNDLES_DIRECTORY]/commands.json` where `[ASSET_BUNDLES_DIRECTORY]` is defined by the `asset_bundles_directory` parameter in the constructor. Optionally, they will also be sent to the build the next time `c.communicate()` is called.
 
         :param lisdf_path: The path to the .lisdf file as either a string or [`Path`](https://docs.python.org/3/library/pathlib.html).
         :param asset_bundles_directory: The directory of the object asset bundles as either a string or [`Path`](https://docs.python.org/3/library/pathlib.html). If it doesn't exist, it will be created while the .lisdf models are being converted.
@@ -53,24 +52,21 @@ class LISDF(AddOn):
             raise Exception(asset_bundles_directory)
         tree = xml.etree.ElementTree.parse(src)
         root = tree.getroot().find('world')
-        a = AssetBundleCreator()
-        unity_call = a.get_base_unity_call()
-        unity_call.extend(["-executeMethod",
-                           "LISDFImporter.Read",
-                           f"-path={src}",
-                           f"-output_directory={dst}"])
+        args = [f"-path={src}", f"-output_directory={dst}"]
         if overwrite:
-            unity_call.append("overwrite")
+            args.append("-overwrite")
         if cleanup:
-            unity_call.append("cleanup")
-        # Convert the models to asset bundles.
-        call(unity_call)
+            args.append("-cleanup")
+        a = AssetBundleCreator()
+        a.call_unity(class_name="LISDFImporter", method="READ", args=args)
         # Print the log.
         if not quiet:
             log_path = Path(dst).joinpath("logs").joinpath("log.txt")
             if log_path.exists():
                 print(log_path.read_text(encoding="utf-8"))
-        commands = []
+        # Load a new scene.
+        commands = [{"$type": "load_scene",
+                     "scene_name": "ProcGenScene"}]
         for child in root.findall("model"):
             pose_node = child.find("pose")
             # Get the position and rotation.
